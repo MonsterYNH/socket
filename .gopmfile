@@ -1,0 +1,4 @@
+[deps]
+github.com/gorilla/websocket = 
+github.com/satori/go.uuid = 
+
