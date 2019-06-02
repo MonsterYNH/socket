@@ -7,6 +7,7 @@ import (
 	"socket/model"
 )
 
+// 讲连接升级成长连接
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
@@ -15,6 +16,7 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+// 长连接事件处理
 func ServeWs(manager *model.Manager, w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -22,5 +24,6 @@ func ServeWs(manager *model.Manager, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 注册连接
 	manager.Regist(conn)
 }

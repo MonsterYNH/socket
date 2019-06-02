@@ -30,33 +30,35 @@ var (
 	// 客户端监听的事件池
 )
 
-var eventPool map[string]func(*Client) error
+var eventPool map[string]func(*Client)error
 
 func init() {
-	eventPool = make(map[string]func(*Client) error)
+	eventPool = make(map[string]func(*Client)error)
+	RegistEvent("OnConnect", OnConnect)
+	RegistEvent("OnClose", OnClose)
 }
 
 type Client struct {
-	ConnID    string
-	conn      *websocket.Conn
-	readChan  chan []byte
+	ConnID string
+	conn *websocket.Conn
+	readChan chan []byte
 	writeChan chan []byte
-	status    int
+	status int
 }
 
 type Event struct {
-	EventName string      `json:"event_name"`
-	Data      interface{} `json:"data"`
+	EventName string `json:"event_name"`
+	Data interface{} `json:"data"`
 }
 
 func NewClient(conn *websocket.Conn) *Client {
 	connID, _ := uuid.NewV4()
-	client := &Client{
-		ConnID:    fmt.Sprintf("%s", connID),
-		conn:      conn,
-		readChan:  make(chan []byte),
+	client := &Client {
+		ConnID: fmt.Sprintf("%s", connID),
+		conn: conn,
+		readChan: make(chan []byte),
 		writeChan: make(chan []byte),
-		status:    CLIENT_UP,
+		status: CLIENT_UP,
 	}
 
 	if err := eventPool["OnConnect"](client); err != nil {
@@ -86,53 +88,51 @@ func NewClient(conn *websocket.Conn) *Client {
 	// 监听向客户端发送的消息
 	go func(client *Client) {
 		ticker := time.NewTicker(time.Second * 5)
-		defer func(client *Client, ticker *time.Ticker) {
+		defer func(client *Client, ticker *time.Ticker){
 			client.Stop()
 			ticker.Stop()
 		}(client, ticker)
 
 		for {
 			select {
-			case <-ticker.C:
-				if client.status == CLIENT_DOWN {
-					return
-				}
-				if err := client.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-					log.Println("ERROR: client ping event error:", err)
-					return
-				}
-			case message, ok := <-client.writeChan:
-				if !ok {
-					client.conn.WriteMessage(websocket.CloseMessage, []byte{})
-					return
-				}
-				if err := client.conn.WriteMessage(websocket.TextMessage, message); err != nil {
-					log.Println("ERROR: client ping event error:", err)
-					return
-				}
-			case message, ok := <-client.readChan:
-				if !ok {
-					client.conn.WriteMessage(websocket.CloseMessage, []byte{})
-					return
-				}
-				event := Event{}
-				if err := json.Unmarshal(message, &event); err != nil {
-					log.Println("ERROR: unmarshal event failed, error: ", err)
-					continue
-				}
-				if callback, exist := eventPool[event.EventName]; exist && event.EventName != "OnConnect" && event.EventName != "OnClose" {
-					if err := callback(client); err != nil {
-						log.Println("ERROR: client event error, event name: ", event.EventName, ", error: ", err)
-					}
-					if event.EventName == "OnClose" {
-						client.Stop()
+				case <- ticker.C:
+					if client.status == CLIENT_DOWN {
 						return
 					}
-				}
+					if err := client.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+						log.Println("ERROR: client ping event error:", err)
+						return
+					}
+				case message, ok := <- client.writeChan:
+					if !ok {
+						client.conn.WriteMessage(websocket.CloseMessage, []byte{})
+						return
+					}
+					if err := client.conn.WriteMessage(websocket.TextMessage, message); err != nil {
+						log.Println("ERROR: client ping event error:", err)
+						return
+					}
+				case message, ok := <- client.readChan:
+					if !ok {
+						client.conn.WriteMessage(websocket.CloseMessage, []byte{})
+						return
+					}
+					event := Event{}
+					if err := json.Unmarshal(message, &event); err != nil {
+						continue
+					}
+					if callback, exist := eventPool[event.EventName]; exist && event.EventName != "OnConnect" && event.EventName != "OnClose" {
+						if err := callback(client); err != nil {
+							log.Println("ERROR: client event error, event name: ", event.EventName, ", error: ", err)
+						}
+						if event.EventName == "OnClose" {
+							client.Stop()
+							return
+						}
+					}
 			}
 		}
 	}(client)
-	log.Println("INFO: new client connected, connID: ", client.ConnID)
 	return client
 }
 
@@ -147,13 +147,23 @@ func (client *Client) Stop() {
 }
 
 func (client *Client) GetClientMessage() []byte {
-	return <-client.readChan
+	return <- client.readChan
 }
 
 func (client *Client) SendMessage(message []byte) {
 	client.writeChan <- message
 }
 
-func RegistEvent(eventName string, callback func(*Client) error) {
+func RegistEvent(eventName string, callback func(*Client)error) {
 	eventPool[eventName] = callback
+}
+
+func OnConnect(client *Client) error {
+	fmt.Println("one client connected, connID: ", client.ConnID)
+	return nil
+}
+
+func OnClose(client *Client) error {
+	fmt.Println("client close connect, connID: ", client.ConnID)
+	return nil
 }
